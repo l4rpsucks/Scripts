@@ -1,5 +1,6 @@
 # Ask for output directory
 $outputDir = Read-Host "Enter the directory path to save the log file"
+$outputDir = $outputDir.Trim('"')  # Remove surrounding quotes if pasted
 if (-not (Test-Path $outputDir)) {
     Write-Host "Directory does not exist. Creating it..."
     New-Item -Path $outputDir -ItemType Directory | Out-Null
