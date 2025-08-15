@@ -1,10 +1,12 @@
 <#
 .SYNOPSIS
-  Checks for PowerShell Event ID 600 in the Event Viewer, extracts potentially fileless bypass commands, and saves them to a CSV file.
+  Detects PowerShell fileless bypasses by monitoring Event ID 600 (engine start) and Event ID 4104 (script block logging).
+  Extracts suspicious commands (including Invoke-WebRequest usage) and saves findings to a CSV file.
 .DESCRIPTION
-  This script queries the Windows Event Log for PowerShell events with ID 600, which logs the start of a PowerShell engine instance.
-  It extracts the command (if available) and the date/time of execution, then saves the results to a CSV file.
-  The user can choose to save in the current directory or enter a custom directory.
+  - Queries Windows PowerShell event logs for Event ID 600 and 4104.
+  - Extracts command lines and script blocks containing 'Invoke-WebRequest'.
+  - Saves results (date, type, suspicious command/script) to a CSV file.
+  - User can choose to save in current directory or specify a location.
 #>
 
 # Prompt user for save location
@@ -21,25 +23,42 @@ if ($choice -match "^[Yy]") {
 
 $CsvFile = Join-Path $OutputDirectory "FilelessBypassDetection.csv"
 
-# Query Event Log for PowerShell Event ID 600
-$events = Get-WinEvent -FilterHashtable @{
+# Collect results in a list
+$results = @()
+
+# --- Event ID 600: PowerShell engine start ---
+$events600 = Get-WinEvent -FilterHashtable @{
     LogName='Windows PowerShell'
     Id=600
 } | Select-Object -Property TimeCreated, Message
 
-# Parse events for command lines (fileless bypasses often show suspicious command usage)
-$results = @()
-foreach ($event in $events) {
+foreach ($event in $events600) {
     $command = ""
-    # Event 600's Message field may contain 'CommandLine = ...'
     if ($event.Message -match "CommandLine = (.+)") {
         $command = $matches[1].Trim()
     }
-    # Only record events with non-empty command lines
     if ($command) {
         $results += [PSCustomObject]@{
             Date    = $event.TimeCreated
-            Command = $command
+            Type    = "EngineStart"
+            Details = $command
+        }
+    }
+}
+
+# --- Event ID 4104: Script Block Logging (Invoke-WebRequest detection) ---
+$events4104 = Get-WinEvent -FilterHashtable @{
+    LogName='Microsoft-Windows-PowerShell/Operational'
+    Id=4104
+} | Select-Object -Property TimeCreated, Message
+
+foreach ($event in $events4104) {
+    $scriptBlock = $event.Message
+    if ($scriptBlock -match "(?i)Invoke-WebRequest") {
+        $results += [PSCustomObject]@{
+            Date    = $event.TimeCreated
+            Type    = "ScriptBlock-InvokeWebRequest"
+            Details = $scriptBlock
         }
     }
 }
