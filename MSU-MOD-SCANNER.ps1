@@ -1,89 +1,15 @@
+<#
+    CheatModJarScanner.ps1
+    Scans all .jar files in a directory for internal cheat/hack class names or suspicious cheat strings.
+    Includes:
+      - Modrinth hash check (via Modrinth API for SHA1)
+      - ADS check (Zone.Identifier stream)
+      - Only scans mod jars, not logs
+      - Prints out per-jar findings
 #>
-[CmdletBinding()]
+
 Param(
-    [string]$ModsPath,
-    [string]$LogPath,
-
-    [Parameter()]
-    [hashtable[]]$KnownBadLogPatterns = @(
-        @{ name = "Wurst Client"; value = "- wurst" },
-        @{ name = "Meteor Client"; value = "- meteor-client" },
-        @{ name = "Francium Client"; value = "- org_apache"},
-        @{ name = "Doomsday Client"; value = "- dd"},
-        @{ name = "Prestige Client"; value = "- prestige"},
-        @{ name = "Inertia Client"; value = "- inertia"},
-        @{ name = "Thunder Hack"; value = "- thunderhack"},
-        @{ name = "Walksy Optimizer"; value = "- walksycrystaloptimizer" },
-        @{ name = "Walksy Shield Statuses"; value = "- shieldstatus" },
-        @{ name = "Accurate Block Placement"; value = "- accurateblockplacement" },
-        @{ name = "Elytra Chest Swapper"; value = "- ecs" },
-        @{ name = "Click Crystals"; value = "- clickcrystals" },
-        @{ name = "Fast Crystal"; value = "- fastcrystal" },
-        @{ name = "Auto Totem"; value = "- autototem" },
-        @{ name = "InventoryTotem"; value = "InventoryTotem" },
-        @{ name = "Hitboxes"; value = "Hitboxes" },
-        @{ name = "JumpReset"; value = "JumpReset" },
-        @{ name = "LegitTotem"; value = "LegitTotem" },
-        @{ name = "PingSpoof"; value = "PingSpoof" },
-        @{ name = "Reach"; value = "Reach" },
-        @{ name = "SelfDestruct"; value = "SelfDestruct" },
-        @{ name = "ShieldBreaker"; value = "ShieldBreaker" },
-        @{ name = "TriggerBot"; value = "TriggerBot" },
-        @{ name = "Velocity"; value = "Velocity" }
-    ),
-
-    [Parameter()]
-    [hashtable[]]$SuspiciousJarPatterns = @(
-        @{ name = "AimAssist"; value = "AimAssist" },
-        @{ name = "AnchorTweaks"; value = "AnchorTweaks" },
-        @{ name = "AutoAnchor"; value = "AutoAnchor" },
-        @{ name = "AutoCrystal"; value = "AutoCrystal" },
-        @{ name = "AutoDoubleHand"; value = "AutoDoubleHand" },
-        @{ name = "AutoHitCrystal"; value = "AutoHitCrystal" },
-        @{ name = "AutoPot"; value = "AutoPot" },
-        @{ name = "AutoTotem"; value = "AutoTotem" },
-        @{ name = "InventoryTotem"; value = "InventoryTotem" },
-        @{ name = "Hitboxes"; value = "Hitboxes" },
-        @{ name = "JumpReset"; value = "JumpReset" },
-        @{ name = "LegitTotem"; value = "LegitTotem" },
-        @{ name = "PingSpoof"; value = "PingSpoof" },
-        @{ name = "Reach"; value = "Reach" },
-        @{ name = "SelfDestruct"; value = "SelfDestruct" },
-        @{ name = "ShieldBreaker"; value = "ShieldBreaker" },
-        @{ name = "TriggerBot"; value = "TriggerBot" },
-        @{ name = "Velocity"; value = "Velocity" },
-        @{ name = "ProGuard/Obfuscated"; value = "proguard" },
-        @{ name = "Allatori"; value = "allatori" },
-        @{ name = "StringEncrypt"; value = "stringencrypt" },
-        @{ name = "ObfuscatedClass"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/([a-z]{1,2}|[A-Z]{1,2})\\.class" },
-        @{ name = "ObfuscatedPackage"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/" },
-        @{ name = "AutoCrystal Cheat Module"; value = "module/AC.class" },
-        @{ name = "Replacement Jar"; value = "replacement/replacement.jar" },
-        @{ name = "Mouse Simluation"; value = "simulateMouseClick" },
-        @{ name = "Generic Cheat (Stop on Kill)"; value = "isDeadBodyNearbyr" },
-        @{ name = "Generic Self Destruct "; value = "9lme/pepperbell/continuity/continuity$handleutil$kernel32;" },
-        @{ name = "Generic Cheat"; value = "placeCrystal" },
-        @{ name = "Generic Cheat"; value = "ItemUseMixin" },
-        @{ name = "Generic Cheat Class (AA.java)"; value = "AA\\.java" },
-        @{ name = "Generic Cheat Class (AC.java)"; value = "AC\\.java" },
-        @{ name = "Generic Cheat Class (AE.java)"; value = "AE\\.java" },
-        @{ name = "Generic Cheat Class (AJR.java)"; value = "AJR\\.java" },
-        @{ name = "Generic Cheat Class (AM.java)"; value = "AM\\.java" },
-        @{ name = "Cheat Variable: EXPLODE_DELAY_MS"; value = "EXPLODE_DELAY_MS" },
-        @{ name = "Cheat Variable: GLOWSTONE_DELAY_MS"; value = "GLOWSTONE_DELAY_MS" },
-        @{ name = "Cheat Variable: FAKE_PUNCH"; value = "FAKE_PUNCH" },
-        @{ name = "Cheat Variable: AUTO_SWAP"; value = "AUTO_SWAP" },
-        @{ name = "Cheat Variable: BREAK_CHANCE"; value = "BREAK_CHANCE" },
-        @{ name = "Cheat Variable: BREAK_DELAY"; value = "BREAK_DELAY" },
-        # Added per your request:
-        @{ name = "Auto Crystal"; value = "Auto Crystal" },
-        @{ name = "Self Destruct"; value = "Self Destruct" },
-        @{ name = "Auto Anchor"; value = "Auto Anchor" },
-        @{ name = "Auto Loot Yeeter"; value = "Auto Loot Yeeter" },
-        @{ name = "CwCrystal class"; value = "CwCrystal.class" },
-        @{ name = "ADH class"; value = "ADH.class" },
-        @{ name = "ModuleManager class"; value = "ModuleManager.class" }
-    )
+    [string]$ModsPath = ""
 )
 
 # Prompt for ModsPath if missing/empty
@@ -91,44 +17,65 @@ while (-not $ModsPath -or [string]::IsNullOrWhiteSpace($ModsPath)) {
     $ModsPath = Read-Host "Enter the FULL PATH to your Minecraft mods folder (e.g. C:\Users\You\AppData\Roaming\.minecraft\mods)"
 }
 
-# Prompt for LogPath if missing/empty
-while (-not $LogPath -or [string]::IsNullOrWhiteSpace($LogPath)) {
-    $LogPath = Read-Host "Enter the FULL PATH to your Minecraft log file (e.g. C:\Users\You\AppData\Roaming\.minecraft\logs\latest.log)"
-}
+# Cheat class/indicator patterns (internal strings, file/class names, NOT log lines)
+$CheatPatterns = @(
+    # Class names
+    "AutoTotem",
+    "AutoCrystal",
+    "SelfDestruct",
+    "AimAssist",
+    "AnchorTweaks",
+    "AutoAnchor",
+    "AutoDoubleHand",
+    "AutoHitCrystal",
+    "AutoPot",
+    "InventoryTotem",
+    "Hitboxes",
+    "JumpReset",
+    "LegitTotem",
+    "PingSpoof",
+    "Reach",
+    "ShieldBreaker",
+    "TriggerBot",
+    "Velocity",
+    "ClickCrystals",
+    "FastCrystal",
+    "ADH.class",
+    "CwCrystal.class",
+    "ModuleManager.class",
+    "AA.java",
+    "AC.java",
+    "AE.java",
+    "AJR.java",
+    "AM.java",
+    "EXPLODE_DELAY_MS",
+    "GLOWSTONE_DELAY_MS",
+    "FAKE_PUNCH",
+    "AUTO_SWAP",
+    "BREAK_CHANCE",
+    "BREAK_DELAY",
+    "Auto Loot Yeeter",
+    "isDeadBodyNearbyr",
+    "placeCrystal",
+    "ItemUseMixin"
+)
 
-Clear-Host
 Write-Host "=======================================" -ForegroundColor Magenta
-Write-Host " Project Insight: Minecraft Mod Dossier " -ForegroundColor Magenta
-Write-Host "      Authored by " -ForegroundColor DarkMagenta -NoNewline
-Write-Host "ECHOAC" -ForegroundColor DarkMagenta
+Write-Host " CheatModJarScanner: Minecraft Mod Audit " -ForegroundColor Magenta
 Write-Host "=======================================" -ForegroundColor Magenta
 Write-Host ""
 
-# --- Validate Paths ---
 if (-not (Test-Path $ModsPath -PathType Container)) {
     Write-Error "Designated mods path is invalid or inaccessible: $ModsPath"
     exit 1
 }
-Write-Host "Operational target acquired: " -ForegroundColor White -NoNewline
-Write-Host $ModsPath -ForegroundColor DarkGray
-Write-Host ""
+Write-Host "Scanning mods folder: $ModsPath" -ForegroundColor White
 
-# --- Check for Running Minecraft Process ---
-Write-Host "=== Operational Status: Minecraft Process ===" -ForegroundColor Green
-$process = Get-Process javaw -ErrorAction SilentlyContinue
-
-if ($process) {
-    $startTime = $process.StartTime
-    $elapsedTime = (Get-Date) - $startTime
-
-    Write-Host "Status: javaw.exe process detected." -ForegroundColor Cyan
-    Write-Host "  Process ID: $($process.Id)" -ForegroundColor DarkGray
-    Write-Host "  Commenced: $startTime" -ForegroundColor DarkGray
-    Write-Host "  Duration: $($elapsedTime.Hours)h $($elapsedTime.Minutes)m $($elapsedTime.Seconds)s" -ForegroundColor DarkGray
-} else {
-    Write-Host "Status: javaw.exe process not detected." -ForegroundColor Yellow
+$jarFiles = Get-ChildItem -Path $ModsPath -Filter *.jar -ErrorAction SilentlyContinue
+if (-not $jarFiles) {
+    Write-Host "No .jar mods detected in: $ModsPath" -ForegroundColor Yellow
+    exit 0
 }
-Write-Host ""
 
 function Get-AdsUrl {
     param (
@@ -141,77 +88,6 @@ function Get-AdsUrl {
         }
     } catch {}
     return $null
-}
-
-function Find-PatternsInText {
-    param (
-        [string[]]$Lines,
-        [hashtable[]]$Patterns
-    )
-    $foundNames = New-Object System.Collections.Generic.HashSet[string]
-    if (-not $Lines) { return $foundNames }
-    foreach ($line in $Lines) {
-        foreach ($pattern in $Patterns) {
-            try {
-                if ($line -imatch $pattern.value) {
-                    $foundNames.Add($pattern.name) | Out-Null
-                }
-            } catch {}
-        }
-    }
-    return $foundNames
-}
-
-function Check-JarContents {
-    param (
-        [string]$FilePath,
-        [hashtable[]]$Patterns
-    )
-    $foundNames = New-Object System.Collections.Generic.HashSet[string]
-    if (-not (Test-Path $FilePath -PathType Leaf)) {
-         Write-Error "Artifact not found for internal content scan: $FilePath"
-         return $foundNames
-    }
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipArchive]::Open($FilePath, [System.IO.Compression.ZipArchiveMode]::Read)
-        foreach ($entry in $zip.Entries) {
-            $entryPath = $entry.FullName -replace '[/\\]', '/'
-            foreach ($pattern in $Patterns) {
-                try {
-                    if ($entryPath -imatch $pattern.value) {
-                        $foundNames.Add($pattern.name) | Out-Null
-                    }
-                } catch {}
-            }
-        }
-        $zip.Dispose()
-    } catch {
-        Write-Warning "Could not conduct internal scan on artifact '$($FilePath)': $($_.Exception.Message)"
-    }
-    return $foundNames
-}
-
-function Check-ObfuscationFile {
-    param (
-        [string]$JarFile
-    )
-    $obfuscationFiles = @("META-INF/proguard/", "META-INF/allatori/", "META-INF/stringencrypt/", "META-INF/obfuscation/", "proguard.map", "allatori_obfuscation.map", "stringencrypt.map")
-    $obfFound = @()
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipArchive]::Open($JarFile, [System.IO.Compression.ZipArchiveMode]::Read)
-        foreach ($entry in $zip.Entries) {
-            $entryPath = $entry.FullName -replace '[/\\]', '/'
-            foreach ($obfFile in $obfuscationFiles) {
-                if ($entryPath -like "*$obfFile*") {
-                    $obfFound += $obfFile
-                }
-            }
-        }
-        $zip.Dispose()
-    } catch {}
-    return $obfFound
 }
 
 function Fetch-ModrinthData {
@@ -234,124 +110,96 @@ function Fetch-ModrinthData {
     return $modData
 }
 
-Write-Host "=== Artifact Analysis: Mod Repository ===" -ForegroundColor Green
-$unknownModsSummary = @()
-$jarFiles = Get-ChildItem -Path $ModsPath -Filter *.jar -ErrorAction SilentlyContinue
-if (-not $jarFiles) {
-    Write-Host "No .jar artifacts located in target repository: $ModsPath" -ForegroundColor Yellow
-} else {
-    foreach ($file in $jarFiles) {
-        Write-Host "Artifact Name: $($file.Name)" -ForegroundColor DarkCyan
-        $hash = $null
-        $obfFilesFound = @()
-        try {
-            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA1 -ErrorAction Stop).Hash
-            Write-Host "  Fingerprint (SHA1): $hash" -ForegroundColor DarkGray
-        } catch {
-             Write-Warning "  Failed to compute fingerprint for artifact '$($file.Name)': $($_.Exception.Message)"
-        }
-        if ($hash) {
-            $modrinthData = Fetch-ModrinthData -Hash $hash
-            if ($modrinthData.Slug) {
-                Write-Host "  Identification Status: Verified - $($modrinthData.Name)" -ForegroundColor Cyan
-                Write-Host "  Source: Modrinth Database" -ForegroundColor DarkGray
-                Write-Host "  Access Link: https://modrinth.com/mod/$($modrinthData.Slug)" -ForegroundColor DarkGray
-            } else {
-                 Write-Host "  Identification Status: Anomaly Detected (Unknown/API Error)" -ForegroundColor Yellow
-                $adsUrl = Get-AdsUrl -FilePath $file.FullName
-                if ($adsUrl) {
-                    Write-Host "  Origin Trace (ADS): $adsUrl" -ForegroundColor DarkGray
-                }
-                $jarPatternsFound = Check-JarContents -FilePath $file.FullName -Patterns $SuspiciousJarPatterns
-                $suspiciousPatterns = $jarPatternsFound | ForEach-Object { $_ }
-                $obfFilesFound = Check-ObfuscationFile -JarFile $file.FullName
-                $isSus = $suspiciousPatterns.Count -gt 0 -or $obfFilesFound.Count -gt 0
-                if ($suspiciousPatterns.Count -gt 0) {
-                    Write-Host "  Suspicious internal signatures found:" -ForegroundColor Red
-                    $suspiciousPatterns | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
-                }
-                if ($obfFilesFound.Count -gt 0) {
-                    Write-Host "  Obfuscation-related files found:" -ForegroundColor Red
-                    $obfFilesFound | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
-                }
-                $unknownModsSummary += [PSCustomObject]@{
-                     FileName = $file.Name
-                     ADSUrl = $adsUrl
-                     SuspiciousInternalPatterns = $suspiciousPatterns
-                     ObfuscationFiles = $obfFilesFound
-                     HashComputed = ($hash -ne $null)
-                     IsSuspicious = $isSus
-                 }
-            }
-        } else {
-             Write-Host "  Identification Status: Anomaly Detected (Fingerprint Computation Failed)" -ForegroundColor Yellow
-             $obfFilesFound = Check-ObfuscationFile -JarFile $file.FullName
-             $unknownModsSummary += [PSCustomObject]@{
-                 FileName = $file.Name
-                 ADSUrl = (Get-AdsUrl -FilePath $file.FullName)
-                 SuspiciousInternalPatterns = @("SHA1 Fingerprint Computation Failed")
-                 ObfuscationFiles = $obfFilesFound
-                 HashComputed = $false
-                 IsSuspicious = $true
-             }
-        }
-        Write-Host "===" -ForegroundColor DarkGray
-    }
-}
-Write-Host ""
-
-Write-Host "=== Operational Log Analysis: $LogPath ===" -ForegroundColor Green
-$suspiciousLogFound = $false
-if (Test-Path $LogPath -PathType Leaf) {
+function Scan-JarForCheatClasses {
+    param (
+        [string]$JarPath,
+        [string[]]$Patterns
+    )
+    $foundMatches = @()
     try {
-        $logContent = Get-Content -Path $LogPath -ErrorAction Stop
-        $logPatternsFound = Find-PatternsInText -Lines $logContent -Patterns $KnownBadLogPatterns
-        if ($logPatternsFound.Count -gt 0) {
-            $suspiciousLogFound = $true
-            Write-Warning "Potential traces found within operational log:"
-            $logPatternsFound | ForEach-Object { Write-Warning "  >>> $_" }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
+        foreach ($entry in $zip.Entries) {
+            # Check the entry name itself (e.g., suspicious class file name)
+            foreach ($pattern in $Patterns) {
+                if ($entry.Name -match $pattern -or $entry.FullName -match $pattern) {
+                    $foundMatches += "Class/File: $($entry.FullName) matches pattern '$pattern'"
+                }
+            }
+            # For .class files, check for readable cheat strings inside
+            if ($entry.Name -match '\.class$') {
+                try {
+                    $stream = $entry.Open()
+                    $bytes = [byte[]]::new($entry.Length)
+                    $stream.Read($bytes, 0, $bytes.Length) | Out-Null
+                    $stream.Close()
+                    $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+                    foreach ($pattern in $Patterns) {
+                        if ($ascii -match $pattern) {
+                            $foundMatches += "Internal String: '$pattern' found in $($entry.FullName)"
+                        }
+                    }
+                } catch {}
+            }
+        }
+        $zip.Dispose()
+    } catch {
+        Write-Warning "Could not scan '$JarPath': $($_.Exception.Message)"
+    }
+    return $foundMatches
+}
+
+$flaggedJars = @()
+foreach ($jar in $jarFiles) {
+    $result = Scan-JarForCheatClasses -JarPath $jar.FullName -Patterns $CheatPatterns
+
+    # Modrinth hash check
+    $sha1 = ""
+    $modrinthStatus = ""
+    try {
+        $sha1 = (Get-FileHash -Path $jar.FullName -Algorithm SHA1 -ErrorAction Stop).Hash
+        $modrinthData = Fetch-ModrinthData -Hash $sha1
+        if ($modrinthData.Slug) {
+            $modrinthStatus = "Verified Modrinth: $($modrinthData.Name) (https://modrinth.com/mod/$($modrinthData.Slug))"
         } else {
-            Write-Host "No known suspicious traces found within the operational log." -ForegroundColor Cyan
+            $modrinthStatus = "Not found on Modrinth (SHA1 $sha1)"
         }
     } catch {
-        Write-Error "Failed to access or process operational log '$LogPath': $($_.Exception.Message)"
+        $modrinthStatus = "SHA1 hash failed: $($_.Exception.Message)"
     }
-} else {
-    Write-Warning "Operational log artifact not located: $LogPath"
-}
-Write-Host ""
 
-Write-Host "=== Dossier Summary: Anomalies & Unverified Artifacts ===" -ForegroundColor Magenta
-$somethingSus = $false
-if ($unknownModsSummary.Count -gt 0) {
-    Write-Host "The following artifacts require further scrutiny (Unidentified via Modrinth, flagged internally, or obfuscated):" -ForegroundColor Red
-    foreach ($mod in $unknownModsSummary) {
-        if ($mod.IsSuspicious) { $somethingSus = $true }
-        Write-Host "- $($mod.FileName)" -ForegroundColor Red
-        if ($mod.HashComputed -eq $false) {
-             Write-Host "  Reason: Fingerprint computation failed." -ForegroundColor DarkGray
-        } elseif (-not $mod.ADSUrl -and $mod.SuspiciousInternalPatterns.Count -eq 0 -and $mod.ObfuscationFiles.Count -eq 0) {
-             Write-Host "  Reason: Unidentified by Modrinth, no ADS trace, no suspicious internal signatures, no obfuscation files found." -ForegroundColor DarkGray
-         } else {
-             Write-Host "  Reason: Unidentified by Modrinth." -ForegroundColor DarkGray
-         }
-        if ($mod.ADSUrl) {
-            Write-Host "  Origin Trace (ADS): $($mod.ADSUrl)" -ForegroundColor DarkGray
-        }
-        if ($mod.SuspiciousInternalPatterns.Count -gt 0) {
-            Write-Host "  Flagged Signatures:" -ForegroundColor Red
-            $mod.SuspiciousInternalPatterns | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
-        }
-        if ($mod.ObfuscationFiles.Count -gt 0) {
-            Write-Host "  Obfuscation Files:" -ForegroundColor Red
-            $mod.ObfuscationFiles | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
+    # ADS check
+    $adsUrl = Get-AdsUrl -FilePath $jar.FullName
+
+    if ($result.Count -gt 0 -or $modrinthStatus -notmatch "^Verified" -or $adsUrl) {
+        $flaggedJars += [PSCustomObject]@{
+            JarName = $jar.Name
+            CheatFindings = $result
+            ModrinthStatus = $modrinthStatus
+            ADSUrl = $adsUrl
         }
     }
 }
-if (-not $somethingSus -and -not $suspiciousLogFound) {
-    Write-Host "Nothing sus" -ForegroundColor Cyan
-} elseif ($somethingSus -or $suspiciousLogFound) {
-    Write-Host "Suspicious findings detected. Please review the above output carefully!" -ForegroundColor Magenta
-}
+
 Write-Host ""
-Write-Host "Manual verification is always recommended." -ForegroundColor Magenta
+Write-Host "=== Cheat Mod Scan Results ===" -ForegroundColor Green
+if ($flaggedJars.Count -eq 0) {
+    Write-Host "No suspicious cheat classes or strings found in any mod jars." -ForegroundColor Cyan
+} else {
+    foreach ($mod in $flaggedJars) {
+        Write-Host ">>> $($mod.JarName)" -ForegroundColor Red
+        if ($mod.CheatFindings.Count -gt 0) {
+            foreach ($f in $mod.CheatFindings) {
+                Write-Host "    $f" -ForegroundColor Yellow
+            }
+        }
+        Write-Host "    $($mod.ModrinthStatus)" -ForegroundColor DarkGray
+        if ($mod.ADSUrl) {
+            Write-Host "    Zone.Identifier HostUrl: $($mod.ADSUrl)" -ForegroundColor Magenta
+        }
+        Write-Host ""
+    }
+    Write-Host "Check the above jars for cheat code or mod removal." -ForegroundColor Magenta
+}
+
+Write-Host "Scan complete."
