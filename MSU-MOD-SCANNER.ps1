@@ -1,13 +1,3 @@
-<#
-    CheatModJarScanner.ps1
-    Scans all .jar files in a directory for internal cheat/hack class names or suspicious cheat strings.
-    Includes:
-      - Modrinth hash check (via Modrinth API for SHA1)
-      - ADS check (Zone.Identifier stream)
-      - Only scans mod jars, not logs
-      - Prints out per-jar findings
-#>
-
 Param(
     [string]$ModsPath = ""
 )
@@ -40,28 +30,20 @@ $CheatPatterns = @(
     "Velocity",
     "ClickCrystals",
     "FastCrystal",
-    "ADH.class",
-    "CwCrystal.class",
-    "ModuleManager.class",
-    "AA.java",
-    "AC.java",
-    "AE.java",
-    "AJR.java",
-    "AM.java",
-    "EXPLODE_DELAY_MS",
-    "GLOWSTONE_DELAY_MS",
-    "FAKE_PUNCH",
-    "AUTO_SWAP",
-    "BREAK_CHANCE",
-    "BREAK_DELAY",
-    "Auto Loot Yeeter",
-    "isDeadBodyNearbyr",
+    "ADH\.class",
+    "CwCrystal\.class",
+    "ModuleManager\.class",
+    "AA\.java",
+    "AC\.java",
+    "AE\.java",
+    "AJR\.java",
+    "AM\.java",
     "placeCrystal",
     "ItemUseMixin"
 )
 
 Write-Host "=======================================" -ForegroundColor Magenta
-Write-Host " CheatModJarScanner: Minecraft Mod Audit " -ForegroundColor Magenta
+Write-Host " MSU Mod-Scanner By MSU Development. " -ForegroundColor Magenta
 Write-Host "=======================================" -ForegroundColor Magenta
 Write-Host ""
 
@@ -171,6 +153,7 @@ foreach ($jar in $jarFiles) {
     # ADS check
     $adsUrl = Get-AdsUrl -FilePath $jar.FullName
 
+    # Only flag jars if there are findings
     if ($result.Count -gt 0 -or $modrinthStatus -notmatch "^Verified" -or $adsUrl) {
         $flaggedJars += [PSCustomObject]@{
             JarName = $jar.Name
