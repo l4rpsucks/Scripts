@@ -1,32 +1,31 @@
-# Ask for output directory
-$outputDir = Read-Host "Enter the directory path to save the log file"
-$outputDir = $outputDir.Trim('"')  # Remove surrounding quotes if pasted
-if (-not (Test-Path $outputDir)) {
-    Write-Host "Directory does not exist. Creating it..."
-    New-Item -Path $outputDir -ItemType Directory | Out-Null
-}
+# ====== USER CONFIG ======
+# Set the full path where you want the CSV saved, e.g. "C:\Logs\PowerShell_Events.csv"
+$outputFile = "C:\Your\Path\Here\PowerShell_Events.csv"
+# ========================
 
-$outputFile = Join-Path $outputDir "bat_executions.txt"
+# Define the Event Log and IDs to fetch
+$logName = "Microsoft-Windows-PowerShell/Operational"
+$eventIDs = @(400, 403, 800, 4103, 4104)
 
-Write-Host "Scanning Program Compatibility Assistant logs for .bat executions..."
+# Fetch the events
+$events = Get-WinEvent -LogName $logName | Where-Object { $eventIDs -contains $_.Id }
 
-# Regex pattern for .bat paths
-$pattern = '([A-Z]:\\[^\s]+\.bat)'
-
-# Get all PCA events with .bat in message
-$events = Get-WinEvent -LogName Application |
-    Where-Object { $_.ProviderName -like "Program Compatibility Assistant*" -and $_.Message -match "\.bat" }
-
-# Extract and save just the .bat paths
-$foundPaths = @()
-foreach ($event in $events) {
-    $matches = [regex]::Matches($event.Message, $pattern, 'IgnoreCase')
-    foreach ($match in $matches) {
-        $foundPaths += $match.Value
+# Create a custom object for CSV export
+$eventsForCsv = $events | ForEach-Object {
+    [PSCustomObject]@{
+        TimeCreated = $_.TimeCreated
+        Id          = $_.Id
+        Level       = $_.LevelDisplayName
+        Message     = $_.Message -replace "`r`n"," "  # Single-line message
+        User        = if ($_.Properties.Count -gt 0) { $_.Properties[0].Value } else { "" }
     }
 }
 
-# Remove duplicates and save
-$foundPaths | Sort-Object -Unique | Out-File -FilePath $outputFile -Encoding UTF8
+# Ensure the folder exists
+$folder = Split-Path $outputFile
+if (!(Test-Path $folder)) { New-Item -ItemType Directory -Path $folder -Force }
 
-Write-Host "Done! Found $($foundPaths.Count) .bat executions. Saved to: $outputFile"
+# Export to CSV
+$eventsForCsv | Export-Csv -Path $outputFile -NoTypeInformation -Encoding UTF8
+
+Write-Host "Events exported to $outputFile"
