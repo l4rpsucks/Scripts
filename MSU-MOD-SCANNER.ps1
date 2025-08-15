@@ -52,12 +52,37 @@ Param(
         @{ name = "ShieldBreaker"; value = "ShieldBreaker" },
         @{ name = "TriggerBot"; value = "TriggerBot" },
         @{ name = "Velocity"; value = "Velocity" },
-        # Obfuscation-related patterns
         @{ name = "ProGuard/Obfuscated"; value = "proguard" },
         @{ name = "Allatori"; value = "allatori" },
         @{ name = "StringEncrypt"; value = "stringencrypt" },
         @{ name = "ObfuscatedClass"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/([a-z]{1,2}|[A-Z]{1,2})\\.class" },
-        @{ name = "ObfuscatedPackage"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/" }
+        @{ name = "ObfuscatedPackage"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/" },
+        @{ name = "AutoCrystal Cheat Module"; value = "module/AC.class" },
+        @{ name = "Replacement Jar"; value = "replacement/replacement.jar" },
+        @{ name = "Mouse Simluation"; value = "simulateMouseClick" },
+        @{ name = "Generic Cheat (Stop on Kill)"; value = "isDeadBodyNearbyr" },
+        @{ name = "Generic Self Destruct "; value = "9lme/pepperbell/continuity/continuity$handleutil$kernel32;" },
+        @{ name = "Generic Cheat"; value = "placeCrystal" },
+        @{ name = "Generic Cheat"; value = "ItemUseMixin" },
+        @{ name = "Generic Cheat Class (AA.java)"; value = "AA\\.java" },
+        @{ name = "Generic Cheat Class (AC.java)"; value = "AC\\.java" },
+        @{ name = "Generic Cheat Class (AE.java)"; value = "AE\\.java" },
+        @{ name = "Generic Cheat Class (AJR.java)"; value = "AJR\\.java" },
+        @{ name = "Generic Cheat Class (AM.java)"; value = "AM\\.java" },
+        @{ name = "Cheat Variable: EXPLODE_DELAY_MS"; value = "EXPLODE_DELAY_MS" },
+        @{ name = "Cheat Variable: GLOWSTONE_DELAY_MS"; value = "GLOWSTONE_DELAY_MS" },
+        @{ name = "Cheat Variable: FAKE_PUNCH"; value = "FAKE_PUNCH" },
+        @{ name = "Cheat Variable: AUTO_SWAP"; value = "AUTO_SWAP" },
+        @{ name = "Cheat Variable: BREAK_CHANCE"; value = "BREAK_CHANCE" },
+        @{ name = "Cheat Variable: BREAK_DELAY"; value = "BREAK_DELAY" },
+        # Added per your request:
+        @{ name = "Auto Crystal"; value = "Auto Crystal" },
+        @{ name = "Self Destruct"; value = "Self Destruct" },
+        @{ name = "Auto Anchor"; value = "Auto Anchor" },
+        @{ name = "Auto Loot Yeeter"; value = "Auto Loot Yeeter" },
+        @{ name = "CwCrystal class"; value = "CwCrystal.class" },
+        @{ name = "ADH class"; value = "ADH.class" },
+        @{ name = "ModuleManager class"; value = "ModuleManager.class" }
     )
 )
 
