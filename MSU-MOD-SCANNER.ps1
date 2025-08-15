@@ -51,7 +51,13 @@ Param(
         @{ name = "SelfDestruct"; value = "SelfDestruct" },
         @{ name = "ShieldBreaker"; value = "ShieldBreaker" },
         @{ name = "TriggerBot"; value = "TriggerBot" },
-        @{ name = "Velocity"; value = "Velocity" }
+        @{ name = "Velocity"; value = "Velocity" },
+        # Obfuscation-related patterns
+        @{ name = "ProGuard/Obfuscated"; value = "proguard" },
+        @{ name = "Allatori"; value = "allatori" },
+        @{ name = "StringEncrypt"; value = "stringencrypt" },
+        @{ name = "ObfuscatedClass"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/([a-z]{1,2}|[A-Z]{1,2})\\.class" },
+        @{ name = "ObfuscatedPackage"; value = "/([a-z]{1,2}|[A-Z]{1,2})\\/" }
     )
 )
 
@@ -121,9 +127,11 @@ function Find-PatternsInText {
     if (-not $Lines) { return $foundNames }
     foreach ($line in $Lines) {
         foreach ($pattern in $Patterns) {
-            if ($line -imatch $pattern.value) {
-                $foundNames.Add($pattern.name) | Out-Null
-            }
+            try {
+                if ($line -imatch $pattern.value) {
+                    $foundNames.Add($pattern.name) | Out-Null
+                }
+            } catch {}
         }
     }
     return $foundNames
@@ -145,9 +153,11 @@ function Check-JarContents {
         foreach ($entry in $zip.Entries) {
             $entryPath = $entry.FullName -replace '[/\\]', '/'
             foreach ($pattern in $Patterns) {
-                if ($entryPath -imatch $pattern.value) {
-                    $foundNames.Add($pattern.name) | Out-Null
-                }
+                try {
+                    if ($entryPath -imatch $pattern.value) {
+                        $foundNames.Add($pattern.name) | Out-Null
+                    }
+                } catch {}
             }
         }
         $zip.Dispose()
@@ -155,6 +165,28 @@ function Check-JarContents {
         Write-Warning "Could not conduct internal scan on artifact '$($FilePath)': $($_.Exception.Message)"
     }
     return $foundNames
+}
+
+function Check-ObfuscationFile {
+    param (
+        [string]$JarFile
+    )
+    $obfuscationFiles = @("META-INF/proguard/", "META-INF/allatori/", "META-INF/stringencrypt/", "META-INF/obfuscation/", "proguard.map", "allatori_obfuscation.map", "stringencrypt.map")
+    $obfFound = @()
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipArchive]::Open($JarFile, [System.IO.Compression.ZipArchiveMode]::Read)
+        foreach ($entry in $zip.Entries) {
+            $entryPath = $entry.FullName -replace '[/\\]', '/'
+            foreach ($obfFile in $obfuscationFiles) {
+                if ($entryPath -like "*$obfFile*") {
+                    $obfFound += $obfFile
+                }
+            }
+        }
+        $zip.Dispose()
+    } catch {}
+    return $obfFound
 }
 
 function Fetch-ModrinthData {
@@ -186,6 +218,7 @@ if (-not $jarFiles) {
     foreach ($file in $jarFiles) {
         Write-Host "Artifact Name: $($file.Name)" -ForegroundColor DarkCyan
         $hash = $null
+        $obfFilesFound = @()
         try {
             $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA1 -ErrorAction Stop).Hash
             Write-Host "  Fingerprint (SHA1): $hash" -ForegroundColor DarkGray
@@ -206,24 +239,35 @@ if (-not $jarFiles) {
                 }
                 $jarPatternsFound = Check-JarContents -FilePath $file.FullName -Patterns $SuspiciousJarPatterns
                 $suspiciousPatterns = $jarPatternsFound | ForEach-Object { $_ }
+                $obfFilesFound = Check-ObfuscationFile -JarFile $file.FullName
+                $isSus = $suspiciousPatterns.Count -gt 0 -or $obfFilesFound.Count -gt 0
                 if ($suspiciousPatterns.Count -gt 0) {
                     Write-Host "  Suspicious internal signatures found:" -ForegroundColor Red
                     $suspiciousPatterns | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
+                }
+                if ($obfFilesFound.Count -gt 0) {
+                    Write-Host "  Obfuscation-related files found:" -ForegroundColor Red
+                    $obfFilesFound | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
                 }
                 $unknownModsSummary += [PSCustomObject]@{
                      FileName = $file.Name
                      ADSUrl = $adsUrl
                      SuspiciousInternalPatterns = $suspiciousPatterns
+                     ObfuscationFiles = $obfFilesFound
                      HashComputed = ($hash -ne $null)
+                     IsSuspicious = $isSus
                  }
             }
         } else {
              Write-Host "  Identification Status: Anomaly Detected (Fingerprint Computation Failed)" -ForegroundColor Yellow
+             $obfFilesFound = Check-ObfuscationFile -JarFile $file.FullName
              $unknownModsSummary += [PSCustomObject]@{
                  FileName = $file.Name
                  ADSUrl = (Get-AdsUrl -FilePath $file.FullName)
                  SuspiciousInternalPatterns = @("SHA1 Fingerprint Computation Failed")
+                 ObfuscationFiles = $obfFilesFound
                  HashComputed = $false
+                 IsSuspicious = $true
              }
         }
         Write-Host "===" -ForegroundColor DarkGray
@@ -232,11 +276,13 @@ if (-not $jarFiles) {
 Write-Host ""
 
 Write-Host "=== Operational Log Analysis: $LogPath ===" -ForegroundColor Green
+$suspiciousLogFound = $false
 if (Test-Path $LogPath -PathType Leaf) {
     try {
         $logContent = Get-Content -Path $LogPath -ErrorAction Stop
         $logPatternsFound = Find-PatternsInText -Lines $logContent -Patterns $KnownBadLogPatterns
         if ($logPatternsFound.Count -gt 0) {
+            $suspiciousLogFound = $true
             Write-Warning "Potential traces found within operational log:"
             $logPatternsFound | ForEach-Object { Write-Warning "  >>> $_" }
         } else {
@@ -251,14 +297,16 @@ if (Test-Path $LogPath -PathType Leaf) {
 Write-Host ""
 
 Write-Host "=== Dossier Summary: Anomalies & Unverified Artifacts ===" -ForegroundColor Magenta
+$somethingSus = $false
 if ($unknownModsSummary.Count -gt 0) {
-    Write-Host "The following artifacts require further scrutiny (Unidentified via Modrinth or flagged internally):" -ForegroundColor Red
+    Write-Host "The following artifacts require further scrutiny (Unidentified via Modrinth, flagged internally, or obfuscated):" -ForegroundColor Red
     foreach ($mod in $unknownModsSummary) {
+        if ($mod.IsSuspicious) { $somethingSus = $true }
         Write-Host "- $($mod.FileName)" -ForegroundColor Red
         if ($mod.HashComputed -eq $false) {
              Write-Host "  Reason: Fingerprint computation failed." -ForegroundColor DarkGray
-        } elseif (-not $mod.ADSUrl -and $mod.SuspiciousInternalPatterns.Count -eq 0) {
-             Write-Host "  Reason: Unidentified by Modrinth, no ADS trace, no suspicious internal signatures found." -ForegroundColor DarkGray
+        } elseif (-not $mod.ADSUrl -and $mod.SuspiciousInternalPatterns.Count -eq 0 -and $mod.ObfuscationFiles.Count -eq 0) {
+             Write-Host "  Reason: Unidentified by Modrinth, no ADS trace, no suspicious internal signatures, no obfuscation files found." -ForegroundColor DarkGray
          } else {
              Write-Host "  Reason: Unidentified by Modrinth." -ForegroundColor DarkGray
          }
@@ -269,9 +317,16 @@ if ($unknownModsSummary.Count -gt 0) {
             Write-Host "  Flagged Signatures:" -ForegroundColor Red
             $mod.SuspiciousInternalPatterns | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
         }
+        if ($mod.ObfuscationFiles.Count -gt 0) {
+            Write-Host "  Obfuscation Files:" -ForegroundColor Red
+            $mod.ObfuscationFiles | ForEach-Object { Write-Host "    >>> $_" -ForegroundColor Red }
+        }
     }
-} else {
+}
+if (-not $somethingSus -and -not $suspiciousLogFound) {
     Write-Host "Nothing sus" -ForegroundColor Cyan
+} elseif ($somethingSus -or $suspiciousLogFound) {
+    Write-Host "Suspicious findings detected. Please review the above output carefully!" -ForegroundColor Magenta
 }
 Write-Host ""
-Write-Host "Doesn't look like we found anything. Still verify manually, though..." -ForegroundColor Magenta
+Write-Host "Manual verification is always recommended." -ForegroundColor Magenta
