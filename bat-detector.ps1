@@ -1,37 +1,26 @@
-# Ask user for log directory
-$logDir = Read-Host "Enter the directory path to save the log file"
-if (-not (Test-Path $logDir)) {
+# Ask user for output directory
+$outputDir = Read-Host "Enter the directory path to save the log file"
+if (-not (Test-Path $outputDir)) {
     Write-Host "Directory does not exist. Creating it..."
-    New-Item -Path $logDir -ItemType Directory | Out-Null
+    New-Item -Path $outputDir -ItemType Directory | Out-Null
 }
 
-# Set log file path
-$logFile = Join-Path $logDir "bat_execution_log.csv"
+$outputFile = Join-Path $outputDir "bat_executions.txt"
 
-# If log file doesn't exist, create it with headers
-if (-not (Test-Path $logFile)) {
-    "Timestamp,FilePath,ProcessID" | Out-File -FilePath $logFile
-}
+Write-Host "Scanning Program Compatibility Assistant logs for all .bat executions..."
 
-Write-Host "Monitoring for .bat file executions. Press Ctrl+C to stop."
+# Get all PCA events from Application log
+$events = Get-WinEvent -LogName Application |
+    Where-Object { $_.ProviderName -like "Program Compatibility Assistant*" -and $_.Message -match "\.bat" }
 
-# Event filter for .bat executions
-$query = @"
-SELECT * FROM Win32_ProcessStartTrace
-WHERE ProcessName LIKE '%.bat'
-"@
-
-Register-WmiEvent -Query $query -SourceIdentifier "BatFileExecution" -Action {
-    $time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $path = $Event.SourceEventArgs.NewEvent.ExecutablePath
-    $pid = $Event.SourceEventArgs.NewEvent.ProcessID
-
-    # Append to CSV
-    "$time,$path,$pid" | Out-File -FilePath $using:logFile -Append
-    Write-Host "Detected .bat execution: $path (PID: $pid)"
-}
-
-# Keep script running
-while ($true) {
-    Start-Sleep 1
+# Write results
+if ($events.Count -gt 0) {
+    foreach ($event in $events) {
+        $time = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
+        $message = $event.Message -replace "`r`n", " "
+        Add-Content -Path $outputFile -Value "[$time] $message"
+    }
+    Write-Host "Done! Found $($events.Count) .bat executions. Log saved to: $outputFile"
+} else {
+    Write-Host "No .bat executions found in PCA logs."
 }
