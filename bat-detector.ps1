@@ -1,4 +1,4 @@
-# Ask user for output directory
+# Ask for output directory
 $outputDir = Read-Host "Enter the directory path to save the log file"
 if (-not (Test-Path $outputDir)) {
     Write-Host "Directory does not exist. Creating it..."
@@ -7,20 +7,25 @@ if (-not (Test-Path $outputDir)) {
 
 $outputFile = Join-Path $outputDir "bat_executions.txt"
 
-Write-Host "Scanning Program Compatibility Assistant logs for all .bat executions..."
+Write-Host "Scanning Program Compatibility Assistant logs for .bat executions..."
 
-# Get all PCA events from Application log
+# Regex pattern for .bat paths
+$pattern = '([A-Z]:\\[^\s]+\.bat)'
+
+# Get all PCA events with .bat in message
 $events = Get-WinEvent -LogName Application |
     Where-Object { $_.ProviderName -like "Program Compatibility Assistant*" -and $_.Message -match "\.bat" }
 
-# Write results
-if ($events.Count -gt 0) {
-    foreach ($event in $events) {
-        $time = $event.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
-        $message = $event.Message -replace "`r`n", " "
-        Add-Content -Path $outputFile -Value "[$time] $message"
+# Extract and save just the .bat paths
+$foundPaths = @()
+foreach ($event in $events) {
+    $matches = [regex]::Matches($event.Message, $pattern, 'IgnoreCase')
+    foreach ($match in $matches) {
+        $foundPaths += $match.Value
     }
-    Write-Host "Done! Found $($events.Count) .bat executions. Log saved to: $outputFile"
-} else {
-    Write-Host "No .bat executions found in PCA logs."
 }
+
+# Remove duplicates and save
+$foundPaths | Sort-Object -Unique | Out-File -FilePath $outputFile -Encoding UTF8
+
+Write-Host "Done! Found $($foundPaths.Count) .bat executions. Saved to: $outputFile"
