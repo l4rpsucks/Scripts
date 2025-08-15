@@ -9,7 +9,7 @@
   - User can choose to save in current directory or specify a location.
 #>
 
-# Prompt user for save location
+
 $choice = Read-Host "Save CSV to current directory? (Y/N)"
 if ($choice -match "^[Yy]") {
     $OutputDirectory = Get-Location
@@ -23,10 +23,8 @@ if ($choice -match "^[Yy]") {
 
 $CsvFile = Join-Path $OutputDirectory "FilelessBypassDetection.csv"
 
-# Collect results in a list
 $results = @()
 
-# --- Event ID 600: PowerShell engine start ---
 $events600 = Get-WinEvent -FilterHashtable @{
     LogName='Windows PowerShell'
     Id=600
@@ -46,7 +44,6 @@ foreach ($event in $events600) {
     }
 }
 
-# --- Event ID 4104: Script Block Logging (Invoke-WebRequest detection) ---
 $events4104 = Get-WinEvent -FilterHashtable @{
     LogName='Microsoft-Windows-PowerShell/Operational'
     Id=4104
@@ -63,7 +60,7 @@ foreach ($event in $events4104) {
     }
 }
 
-# Export to CSV
+
 $results | Export-Csv -Path $CsvFile -NoTypeInformation -Force
 
 Write-Host "`nSaved results to $CsvFile"
