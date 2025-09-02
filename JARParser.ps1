@@ -74,22 +74,23 @@ if ($xxstringsOutput) {
     $xxstringsOutput | ForEach-Object {
         Write-Host $_ -ForegroundColor Gray
 
-        # Extract file path after -jar
-        if ($_ -match '-jar\s+("?)([^"\s]+\.jar)') {
-            $jarPath = $Matches[2]
+        # Try to extract a .jar path after the -jar argument
+        if ($_ -match '-jar\s+"?([^"\s]+\.jar)"?') {
+            $jarPath = $Matches[1]
 
-            # Replace \VOLUME{} if exists
-            if ($jarPath -match '\\VOLUME{.+?}') {
-                $jarPath = $jarPath -replace '\\VOLUME{.+?}', 'C:'
+            # Replace \VOLUME{} if present
+            if ($jarPath -match '\\VOLUME{[^}]+}') {
+                $jarPath = $jarPath -replace '\\VOLUME{[^}]+}', 'C:'
             }
 
             Write-Host "`nProcessing JAR file: $jarPath" -ForegroundColor Cyan
 
             try {
-                if ((Get-Content $jarPath -First 1 -ErrorAction Stop) -match 'PK\x03\x04') {
+                $firstByte = Get-Content $jarPath -Encoding Byte -TotalCount 4 -ErrorAction Stop
+                if ($firstByte[0] -eq 0x50 -and $firstByte[1] -eq 0x4B -and $firstByte[2] -eq 0x03 -and $firstByte[3] -eq 0x04) {
                     Write-Host "Valid .jar file in memory string: $jarPath" -ForegroundColor DarkGreen
                 } else {
-                    Write-Host "Invalid .jar file (bad magic): $jarPath" -ForegroundColor DarkRed
+                    Write-Host "Invalid .jar file (wrong magic): $jarPath" -ForegroundColor DarkRed
                 }
             } catch {
                 Write-Host "File not found or inaccessible: $jarPath" -ForegroundColor DarkYellow
@@ -101,3 +102,4 @@ if ($xxstringsOutput) {
 } else {
     Write-Host "No strings containing '-jar' were found in DcomLaunch process memory." -ForegroundColor Red
 }
+
