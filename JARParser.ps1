@@ -75,12 +75,12 @@ if ($xxstringsOutput) {
         Write-Host $_ -ForegroundColor Gray
 
         # Extract file path after -jar
-        if ($_ -match "-jar\s+(`"?)([^\s\"']+\.jar)(`\"?)") {
+        if ($_ -match '-jar\s+("?)([^"\s]+\.jar)') {
             $jarPath = $Matches[2]
 
             # Replace \VOLUME{} if exists
-            if ($jarPath -match '\\VOLUME{(.+?)}') {
-                $jarPath = $jarPath -replace '\\VOLUME{(.+?)}', 'C:'
+            if ($jarPath -match '\\VOLUME{.+?}') {
+                $jarPath = $jarPath -replace '\\VOLUME{.+?}', 'C:'
             }
 
             Write-Host "`nProcessing JAR file: $jarPath" -ForegroundColor Cyan
