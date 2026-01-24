@@ -1,14 +1,11 @@
 <#
     .SYNOPSIS
-    Minecraft Inspector v4.0 (Integrity + Origin Trace + Memory)
+    Minecraft Inspector v4.4 (Strict Exact-Match & Bugfix)
     
     .DESCRIPTION
-    1. TOOLS: Downloads Handle, Procdump, Strings.
-    2. DISK: 
-       - Lists loaded .jars.
-       - HASH CHECK: Verifies against Modrinth API.
-       - ORIGIN CHECK: Reads 'Zone.Identifier' ADS to find source URL.
-    3. MEMORY: Dumps memory and greps for cheats.
+    1. FIXED: Renamed $PID to $TargetPID to stop the crash.
+    2. FIXED: Added 'Select-Object -Unique' to stop scanning the same process 3 times.
+    3. STRICT MODE: "Reach" now uses \bReach\b. It will IGNORE "Breach", "Preach", etc.
 #>
 
 # --- CONFIGURATION ---
@@ -20,19 +17,37 @@ $Urls = @{
     "strings"  = "https://live.sysinternals.com/strings.exe"
 }
 
-# --- CHEAT SIGNATURE DATABASE ---
-$ClientNames = "Argon|Vape|Meteor Client|Krypton Client|Raven|LiquidBounce|Sigma|Wurst|Aristois|Inertia|Rise Client|Tenacity|Augustus"
-$GenericCheats = "PlaceDelay|SwitchDelay|ExpandHitboxes|ExplodeChance|PlaceChance|SwitchChance|StopOnKill|Velocity|AntiKnockback"
-$BlatantMods = "Autototem|AutoCrystal|AnchorMacro|AutoHitCrystal|AutoDoubleHand|TotemOffhand|Auto Xp|Auto Wtap|TriggerBot|AimAssist|AutoPot|AutoPotRefill|Reach|AutoJumpReset|NoMissDelay"
-$CheatRegex = "(?i)($ClientNames|$GenericCheats|$BlatantMods)"
+# --- CHEAT DETECTION DATABASE (STRICT) ---
 
-# Setup
+# 1. STRICT WORDS (Common English words that must be EXACT matches)
+# Using \b (Word Boundary) prevents "Reach" from matching "Breach"
+$StrictWords = @(
+    "\bReach\b", 
+    "\bVelocity\b", 
+    "\bAimAssist\b", 
+    "\bFlight\b", 
+    "\bKillaura\b", 
+    "\bHitbox\b",
+    "\bTimer\b"
+)
+$StrictRegex = $StrictWords -join "|"
+
+# 2. CLIENT NAMES (Unique names, broad matching allowed)
+$ClientNames = "Argon|Vape|Meteor Client|Krypton Client|Raven|LiquidBounce|Sigma|Wurst|Aristois|Inertia|Rise Client|Tenacity|Augustus"
+
+# 3. BLATANT MOD FEATURES (Specific compound words)
+$BlatantMods = "Autototem|AutoCrystal|AnchorMacro|AutoHitCrystal|AutoDoubleHand|TotemOffhand|AutoWtapp|TriggerBot|AutoPot|AutoJumpReset|NoMissDelay"
+
+# Combine all into one Case-Insensitive Regex
+$CheatRegex = "(?i)($StrictRegex|$ClientNames|$BlatantMods)"
+
+# Setup Workspace
 if (-not (Test-Path $ToolDir)) { New-Item -Path $ToolDir -ItemType Directory -Force | Out-Null }
 if (-not (Test-Path $DumpDir)) { New-Item -Path $DumpDir -ItemType Directory -Force | Out-Null }
 
 Clear-Host
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "   MINECRAFT INSPECTOR v4.0 (ORIGIN TRACER)        " -ForegroundColor Cyan
+Write-Host "   MINECRAFT INSPECTOR v4.4 (STRICT MODE)          " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 
 # 1. ACQUIRE TOOLS
@@ -43,25 +58,32 @@ foreach ($Tool in $Urls.Keys) {
         try { 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $Urls[$Tool] -OutFile $ExePath 
-            Write-Host "    [+] Downloaded $Tool.exe" -ForegroundColor Gray
         } catch { Write-Host "    [!] Failed to download $Tool" -ForegroundColor Red }
     }
 }
 
 # 2. FIND MINECRAFT
-$MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'"
-if (-not $MCProcs) { Write-Host "[-] No 'javaw.exe' found." -ForegroundColor Red; Pause; Exit }
+# We filter for Unique PIDs to avoid scanning the same process multiple times
+$MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'" | 
+           Where-Object {$_.CommandLine -match "minecraft" -or $_.CommandLine -match "lunar" -or $_.CommandLine -match "badlion"} |
+           Select-Object -Property ProcessId, Name, CommandLine -Unique
+
+if (-not $MCProcs) { 
+    Write-Host "[-] No Minecraft process found." -ForegroundColor Red
+    # Fallback to simple scan if filter was too strict
+    $MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe'" | Select-Object -Property ProcessId, Name, CommandLine -Unique
+}
 
 foreach ($Proc in $MCProcs) {
-    $PID = $Proc.ProcessId
-    Write-Host "`n[ TARGET LOCKED ] PID: $PID | Name: $($Proc.Name)" -ForegroundColor Green -BackgroundColor Black
+    $TargetPID = $Proc.ProcessId # FIXED: Using $TargetPID instead of reserved $PID
+    Write-Host "`n[ TARGET LOCKED ] PID: $TargetPID | Name: $($Proc.Name)" -ForegroundColor Green -BackgroundColor Black
 
-    # --- PHASE A: INTEGRITY & ORIGIN SCAN ---
-    Write-Host "`n   [A] FILE INTEGRITY & ORIGIN (Disk Artifacts)" -ForegroundColor Yellow
-    Write-Host "       Scanning loaded jars for Modrinth Hashes and Zone.Identifiers..." -ForegroundColor Gray
+    # --- PHASE A: INTEGRITY & ORIGIN ---
+    Write-Host "`n   [A] FILE INTEGRITY & ORIGIN" -ForegroundColor Yellow
     
-    $HandleOut = & "$ToolDir\handle.exe" -p $PID -accepteula
-    $FoundJars = $HandleOut | Select-String "([a-zA-Z]:\\.*\.jar)" -AllMatches | ForEach-Object { $_.Matches.Value } | Select-Object -Unique
+    $HandleOut = & "$ToolDir\handle.exe" -p $TargetPID -accepteula
+    # Improved Regex for file paths
+    $FoundJars = $HandleOut | Select-String "(?i)([a-z]:\\[^:<>\x22\x7c?*]+\.jar)" -AllMatches | ForEach-Object { $_.Matches.Value } | Select-Object -Unique
 
     if ($FoundJars) {
         foreach ($JarPath in $FoundJars) {
@@ -69,90 +91,60 @@ foreach ($Proc in $MCProcs) {
             $FileName = Split-Path $JarPath -Leaf
             
             if (Test-Path $JarPath) {
-                # 1. Modrinth Hash Check
                 $HashObj = Get-FileHash -Path $JarPath -Algorithm SHA1
                 $SHA1 = $HashObj.Hash.ToLower()
-                
-                # Default Status
-                $Status = "[UNKNOWN/PRIVATE]"
-                $Color = "Red"
+                $Status = "[UNKNOWN/PRIVATE]"; $Color = "Red"
                 
                 try {
                     $Uri = "https://api.modrinth.com/v2/version_file/$SHA1?algorithm=sha1"
                     $Response = Invoke-RestMethod -Uri $Uri -Method Get -ErrorAction Stop
-                    $Status = "[VERIFIED]"
-                    $Color = "Green"
-                } catch { 
-                    # 404 = Not found
-                }
+                    $Status = "[VERIFIED]"; $Color = "Green"
+                } catch {}
                 
-                # Print File Status
-                Write-Host "   ------------------------------------------------" -ForegroundColor DarkGray
-                Write-Host "   FILE: " -NoNewline -ForegroundColor Gray
-                Write-Host "$FileName " -NoNewline -ForegroundColor White
+                Write-Host "   FILE: $FileName " -NoNewline -ForegroundColor White
                 Write-Host "$Status" -ForegroundColor $Color
-                
-                if ($Status -eq "[UNKNOWN/PRIVATE]") {
-                     Write-Host "   PATH: $JarPath" -ForegroundColor DarkGray
-                }
 
-                # 2. ZONE.IDENTIFIER CHECK (The Origin Trace)
+                if ($Status -eq "[UNKNOWN/PRIVATE]") { Write-Host "   PATH: $JarPath" -ForegroundColor DarkGray }
+
                 $ZoneStream = "$JarPath`:Zone.Identifier"
                 if (Test-Path $ZoneStream) {
                     $ZoneContent = Get-Content -Path $ZoneStream -Raw
-                    
-                    # Regex to pull URLs
                     if ($ZoneContent -match "HostUrl=(.*)") {
-                        $Origin = $Matches[1].Trim()
-                        Write-Host "   [ORIGIN] $Origin" -ForegroundColor Cyan
-                        
-                        # Heuristic: Check for common cheat hosts
-                        if ($Origin -match "discord" -or $Origin -match "github" -or $Origin -match "mediafire") {
-                            Write-Host "            (Suspicious: Downloaded from File Host/Chat, not a repo)" -ForegroundColor Magenta
-                        }
-                    }
-                } else {
-                    if ($Status -eq "[UNKNOWN/PRIVATE]") {
-                        Write-Host "   [NO ORIGIN] Metadata missing (File cleaned or moved from USB?)" -ForegroundColor Red
+                        Write-Host "   [ORIGIN] $($Matches[1].Trim())" -ForegroundColor Cyan
                     }
                 }
             }
         }
     } else {
-        Write-Host "   [-] No .jar handles found. (Is game fully loaded?)" -ForegroundColor Red
+        Write-Host "   [-] No .jar handles found (Game might be loading or AV blocking)." -ForegroundColor DarkGray
     }
 
     # --- PHASE B: MEMORY STRING SCAN ---
-    Write-Host "`n   [B] MEMORY STRING SCAN (Deep Analysis)" -ForegroundColor Yellow
+    Write-Host "`n   [B] MEMORY STRING SCAN (Strict Match Only)" -ForegroundColor Yellow
     Write-Host "       Dumping memory..." -ForegroundColor Gray
     
-    $DumpFile = "$DumpDir\mc_dump_$PID.dmp"
-    $DumpProc = Start-Process -FilePath "$ToolDir\procdump.exe" -ArgumentList "-ma $PID `"$DumpFile`" -accepteula" -Wait -PassThru -NoNewWindow
+    $DumpFile = "$DumpDir\mc_dump_$TargetPID.dmp"
+    $DumpProc = Start-Process -FilePath "$ToolDir\procdump.exe" -ArgumentList "-ma $TargetPID `"$DumpFile`" -accepteula" -Wait -PassThru -NoNewWindow
     
     if (Test-Path $DumpFile) {
-        Write-Host "       Scanning for strings..." -ForegroundColor Gray
+        Write-Host "       Scanning strings..." -ForegroundColor Gray
         $HitCount = 0
         
         & "$ToolDir\strings.exe" -n 6 $DumpFile | ForEach-Object {
-            $Line = $_
+            $Line = $_.Trim()
             
+            # THE FIX: This Regex now enforces \b boundaries
             if ($Line -match $CheatRegex) {
                 Write-Host "       [!!!] CHEAT DETECTED: $Line" -ForegroundColor Red -BackgroundColor Yellow
                 $HitCount++
             }
-            if ($Line -match "\.class$") {
-                if ($Line -match "(?i)(Mixins|Client|Cheat|Hack|Impl|Wrapper|Loader)") {
-                     if ($Line -notmatch "net/minecraft" -and $Line -notmatch "com/mojang") {
-                        Write-Host "       [CLASS] $Line" -ForegroundColor Magenta
-                     }
-                }
-            }
         }
         
         if ($HitCount -eq 0) { Write-Host "       [-] No blatant strings found." -ForegroundColor Green }
+        
+        # Cleanup
         Remove-Item $DumpFile -Force
     }
 }
-
 Write-Host "`n[ SCAN COMPLETE ]" -ForegroundColor Cyan
 Pause
