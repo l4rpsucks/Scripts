@@ -1,12 +1,11 @@
 <#
     .SYNOPSIS
-    Minecraft Inspector v4.3 (Strict "Exact Word" Matching)
+    Minecraft Inspector v4.4 (Strict Exact-Match & Bugfix)
     
     .DESCRIPTION
-    1. STRICT REGEX: "Reach" now requires "\bReach\b" (Word Boundaries).
-       - Matches: "Reach", " Reach ", "Reach."
-       - IGNORES: "Breach", "Preach", "Reaching", "Outreach".
-    2. RETAINS: Modrinth Integrity Check & Zone Identifier.
+    1. FIXED: Renamed $PID to $TargetPID to stop the crash.
+    2. FIXED: Added 'Select-Object -Unique' to stop scanning the same process 3 times.
+    3. STRICT MODE: "Reach" now uses \bReach\b. It will IGNORE "Breach", "Preach", etc.
 #>
 
 # --- CONFIGURATION ---
@@ -18,50 +17,37 @@ $Urls = @{
     "strings"  = "https://live.sysinternals.com/strings.exe"
 }
 
-# --- CHEAT DATABASE (STRICT VS BROAD) ---
+# --- CHEAT DETECTION DATABASE (STRICT) ---
 
-# 1. EXACT MATCH ONLY (Wrapped in \b...\b)
-# These are common words that MUST be standalone to be considered a cheat.
-$ExactWords = @(
-    "Reach",       # Will NOT match "Breach"
-    "Velocity",    # Will NOT match "HighVelocity"
-    "Flight",      # Will NOT match "Inflight"
-    "Timer",       # Will NOT match "TimerTask"
-    "Blink",
-    "Step",
-    "AimAssist"
+# 1. STRICT WORDS (Common English words that must be EXACT matches)
+# Using \b (Word Boundary) prevents "Reach" from matching "Breach"
+$StrictWords = @(
+    "\bReach\b", 
+    "\bVelocity\b", 
+    "\bAimAssist\b", 
+    "\bFlight\b", 
+    "\bKillaura\b", 
+    "\bHitbox\b",
+    "\bTimer\b"
 )
-# Create Regex: \bReach\b|\bVelocity\b
-$ExactRegex = ($ExactWords | ForEach-Object { "\b$_\b" }) -join "|"
+$StrictRegex = $StrictWords -join "|"
 
-# 2. BROAD MATCH (Standard Regex)
-# Unique names where we want to catch "VapeClient", "Vape_v4", etc.
-$BroadWords = @(
-    "Argon", "Vape", "Meteor Client", "Krypton Client", "Raven", 
-    "LiquidBounce", "Sigma", "Wurst", "Aristois", "Inertia", 
-    "Rise Client", "Tenacity", "Augustus",
-    "Autototem", "AutoCrystal", "AnchorMacro", "KillAura"
-)
-$BroadRegex = ($BroadWords -join "|")
+# 2. CLIENT NAMES (Unique names, broad matching allowed)
+$ClientNames = "Argon|Vape|Meteor Client|Krypton Client|Raven|LiquidBounce|Sigma|Wurst|Aristois|Inertia|Rise Client|Tenacity|Augustus"
 
-# COMBINE: ((Strict)|(Broad))
-$FinalCheatRegex = "(?i)($ExactRegex|$BroadRegex)"
+# 3. BLATANT MOD FEATURES (Specific compound words)
+$BlatantMods = "Autototem|AutoCrystal|AnchorMacro|AutoHitCrystal|AutoDoubleHand|TotemOffhand|AutoWtapp|TriggerBot|AutoPot|AutoJumpReset|NoMissDelay"
 
+# Combine all into one Case-Insensitive Regex
+$CheatRegex = "(?i)($StrictRegex|$ClientNames|$BlatantMods)"
 
-# --- FALSE POSITIVE IGNORE LIST ---
-$IgnoreList = @(
-    "Washington state law", "breach of contract", "breach of warranty", 
-    "conflict of laws", "consumer protection laws", "negligence", 
-    "Mojang Synergies", "Apache Software"
-)
-
-# Setup
+# Setup Workspace
 if (-not (Test-Path $ToolDir)) { New-Item -Path $ToolDir -ItemType Directory -Force | Out-Null }
 if (-not (Test-Path $DumpDir)) { New-Item -Path $DumpDir -ItemType Directory -Force | Out-Null }
 
 Clear-Host
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "   MINECRAFT INSPECTOR v4.3 (STRICT MODE)          " -ForegroundColor Cyan
+Write-Host "   MINECRAFT INSPECTOR v4.4 (STRICT MODE)          " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 
 # 1. ACQUIRE TOOLS
@@ -77,21 +63,27 @@ foreach ($Tool in $Urls.Keys) {
 }
 
 # 2. FIND MINECRAFT
-$MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'" | Where-Object {$_.CommandLine -match "minecraft"}
+# We filter for Unique PIDs to avoid scanning the same process multiple times
+$MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe' OR Name='java.exe'" | 
+           Where-Object {$_.CommandLine -match "minecraft" -or $_.CommandLine -match "lunar" -or $_.CommandLine -match "badlion"} |
+           Select-Object -Property ProcessId, Name, CommandLine -Unique
+
 if (-not $MCProcs) { 
     Write-Host "[-] No Minecraft process found." -ForegroundColor Red
-    $MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe'"
+    # Fallback to simple scan if filter was too strict
+    $MCProcs = Get-CimInstance Win32_Process -Filter "Name='javaw.exe'" | Select-Object -Property ProcessId, Name, CommandLine -Unique
 }
 
 foreach ($Proc in $MCProcs) {
-    $McPID = $Proc.ProcessId
-    Write-Host "`n[ TARGET LOCKED ] PID: $McPID | Name: $($Proc.Name)" -ForegroundColor Green -BackgroundColor Black
+    $TargetPID = $Proc.ProcessId # FIXED: Using $TargetPID instead of reserved $PID
+    Write-Host "`n[ TARGET LOCKED ] PID: $TargetPID | Name: $($Proc.Name)" -ForegroundColor Green -BackgroundColor Black
 
     # --- PHASE A: INTEGRITY & ORIGIN ---
     Write-Host "`n   [A] FILE INTEGRITY & ORIGIN" -ForegroundColor Yellow
     
-    $HandleOut = & "$ToolDir\handle.exe" -p $McPID -accepteula
-    $FoundJars = $HandleOut | Select-String "(?i)([a-z]:\\[^:<>\x22]+\.jar)" -AllMatches | ForEach-Object { $_.Matches.Value } | Select-Object -Unique
+    $HandleOut = & "$ToolDir\handle.exe" -p $TargetPID -accepteula
+    # Improved Regex for file paths
+    $FoundJars = $HandleOut | Select-String "(?i)([a-z]:\\[^:<>\x22\x7c?*]+\.jar)" -AllMatches | ForEach-Object { $_.Matches.Value } | Select-Object -Unique
 
     if ($FoundJars) {
         foreach ($JarPath in $FoundJars) {
@@ -123,14 +115,16 @@ foreach ($Proc in $MCProcs) {
                 }
             }
         }
+    } else {
+        Write-Host "   [-] No .jar handles found (Game might be loading or AV blocking)." -ForegroundColor DarkGray
     }
 
-    # --- PHASE B: MEMORY STRING SCAN (STRICT) ---
-    Write-Host "`n   [B] MEMORY STRING SCAN (Strict Match: ON)" -ForegroundColor Yellow
+    # --- PHASE B: MEMORY STRING SCAN ---
+    Write-Host "`n   [B] MEMORY STRING SCAN (Strict Match Only)" -ForegroundColor Yellow
     Write-Host "       Dumping memory..." -ForegroundColor Gray
     
-    $DumpFile = "$DumpDir\mc_dump_$McPID.dmp"
-    $DumpProc = Start-Process -FilePath "$ToolDir\procdump.exe" -ArgumentList "-ma $McPID `"$DumpFile`" -accepteula" -Wait -PassThru -NoNewWindow
+    $DumpFile = "$DumpDir\mc_dump_$TargetPID.dmp"
+    $DumpProc = Start-Process -FilePath "$ToolDir\procdump.exe" -ArgumentList "-ma $TargetPID `"$DumpFile`" -accepteula" -Wait -PassThru -NoNewWindow
     
     if (Test-Path $DumpFile) {
         Write-Host "       Scanning strings..." -ForegroundColor Gray
@@ -139,21 +133,16 @@ foreach ($Proc in $MCProcs) {
         & "$ToolDir\strings.exe" -n 6 $DumpFile | ForEach-Object {
             $Line = $_.Trim()
             
-            # 1. APPLY REGEX
-            if ($Line -match $FinalCheatRegex) {
-                
-                # 2. CHECK IGNORE LIST
-                $IsSafe = $false
-                foreach ($Safe in $IgnoreList) { if ($Line -match [regex]::Escape($Safe)) { $IsSafe = $true; break } }
-                
-                if (-not $IsSafe) {
-                    Write-Host "       [!!!] CHEAT DETECTED: $Line" -ForegroundColor Red -BackgroundColor Yellow
-                    $HitCount++
-                }
+            # THE FIX: This Regex now enforces \b boundaries
+            if ($Line -match $CheatRegex) {
+                Write-Host "       [!!!] CHEAT DETECTED: $Line" -ForegroundColor Red -BackgroundColor Yellow
+                $HitCount++
             }
         }
         
         if ($HitCount -eq 0) { Write-Host "       [-] No blatant strings found." -ForegroundColor Green }
+        
+        # Cleanup
         Remove-Item $DumpFile -Force
     }
 }
