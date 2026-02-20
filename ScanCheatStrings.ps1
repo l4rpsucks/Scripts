@@ -30,7 +30,7 @@ if (-not (Get-Command "strings.exe" -ErrorAction SilentlyContinue) -and -not (Te
     Remove-Item $zipPath, "$env:TEMP\StringsExtract" -Recurse -ErrorAction SilentlyContinue
 }
 
-# Set alias if we just downloaded it
+# Set alias for the current session
 if (Test-Path $stringsPath) {
     Set-Alias strings $stringsPath
 }
@@ -47,8 +47,9 @@ try {
     exit
 }
 
-# 4. Scan for Cheat Strings
+# 4. Comprehensive Cheat String List
 $cheatStrings = @(
+    # Original List
     "AimAssist", "Automatically aims at players for you", "AnchorMacro",
     "AutoCrystal", "placeDelay", "breakDelay", "stopOnKill",
     "clickSimulation", "damageTick", "particleChance", "antiWeakness",
@@ -64,7 +65,13 @@ $cheatStrings = @(
     "STOP_ON_KILL", "DAMAGE_TICK", "switchToSword", "damageTickCheck",
     "isDeadBodyNearby", "SWITCH_CHANCE", "EXPLODE_DELAY_MS", "EXPLODE_SLOT",
     "isRightClickHeld", "PacketLag", "wasOnGround", "isAttackButtonPressed",
-    "findKnockbackSword", "Failed to create temp file"
+    "findKnockbackSword", "Failed to create temp file",
+    
+    # New Targeted Strings
+    "onlyOnGround", "originalSlot", "isSwapped", "switchBack", "setSlot",
+    "breachSlot", "executeMacroStep", "getSelectedSlot", "swingHand",
+    "activateKeyPressed", "findItemInHotbar", "MouseSimulation",
+    "mouseClick", "waitingToAttack", "pendingTarget"
 )
 
 if (Test-Path $tempFile) {
@@ -74,6 +81,7 @@ if (Test-Path $tempFile) {
     Write-Host "[*] Scanning memory for cheat signatures..." -ForegroundColor Cyan
 
     foreach ($str in $cheatStrings) {
+        # Using -match for regex speed; [regex]::Escape handles special characters
         if ($lines -match [regex]::Escape($str)) {
             $caughtStrings += $str
         }
@@ -87,7 +95,7 @@ if (Test-Path $tempFile) {
         Write-Host "[+] No suspicious strings found in javaw memory." -ForegroundColor Green
     }
 
-    # Cleanup memory dump for privacy
+    # Cleanup memory dump
     Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
 
