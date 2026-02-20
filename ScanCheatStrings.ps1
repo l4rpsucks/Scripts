@@ -4,58 +4,87 @@ Write-Host @"
 =============================================
 "@
 
-# 1. Identify Minecraft Process
+# 1. Check for javaw process
 $javaProc = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
-if (-not $javaProc) { 
-    Write-Host "[-] javaw.exe not found." -ForegroundColor Red; exit 
+
+if (-not $javaProc) {
+    Write-Host "[-] javaw.exe is not running. Please start Minecraft first." -ForegroundColor Red
+    exit
 }
+
 $JavaPID = $javaProc.Id[0]
-$dumpFile = "$env:TEMP\heap_dump.hprof"
-$stringsFile = "$env:TEMP\decoded_strings.txt"
+$tempFile = "$env:TEMP\javaw_strings.txt"
+$stringsPath = "$env:USERPROFILE\Downloads\strings.exe"
 
-# 2. Deep Scan: Use JCMD to dump the Java Heap
-Write-Host "[*] Starting Deep Scan on PID $JavaPID..." -ForegroundColor Cyan
-Write-Host "[!] This may freeze Minecraft for a few seconds." -ForegroundColor Yellow
-
-# Try to find jcmd.exe (requires JDK)
-$jcmd = Get-Command "jcmd.exe" -ErrorAction SilentlyContinue
-if ($null -eq $jcmd) {
-    Write-Host "[-] JCMD not found. Deep Scan requires the Java Development Kit (JDK)." -ForegroundColor Red
-    Write-Host "[*] Falling back to standard memory scan..." -ForegroundColor Gray
-    # Standard strings logic would go here
-} else {
-    # Generate a live heap dump
-    & $jcmd $JavaPID GC.heap_dump $dumpFile
+# 2. Auto-Download strings.exe if missing
+if (-not (Get-Command "strings.exe" -ErrorAction SilentlyContinue) -and -not (Test-Path $stringsPath)) {
+    Write-Host "[*] strings.exe not found. Downloading from Microsoft..." -ForegroundColor Yellow
+    $url = "https://download.sysinternals.com/files/Strings.zip"
+    $zipPath = "$env:TEMP\Strings.zip"
+    
+    Invoke-WebRequest -Uri $url -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\StringsExtract" -Force
+    Move-Item -Path "$env:TEMP\StringsExtract\strings.exe" -Destination $stringsPath -Force
+    
+    Remove-Item $zipPath, "$env:TEMP\StringsExtract" -Recurse -ErrorAction SilentlyContinue
 }
 
-# 3. Analyze the Heap for Signatures
+if (Test-Path $stringsPath) { Set-Alias strings $stringsPath }
+
+Write-Host "[*] Found javaw.exe (PID: $JavaPID)" -ForegroundColor Cyan
+Write-Host "[*] Extracting strings from memory... Please wait." -ForegroundColor Yellow
+
+# 3. Extract strings
+try {
+    strings -a -p $JavaPID > $tempFile
+} catch {
+    Write-Host "[-] Failed to extract strings. Run as Administrator." -ForegroundColor Red
+    exit
+}
+
+# 4. Comprehensive Cheat String List
 $cheatStrings = @(
-    "AimAssist", "AutoCrystal", "FakePunch", "ShieldDisabler", "DamageTick",
-    "breachSlot", "placeClock", "breakClock", "Randomization", "pendingTarget",
-    # Class path signatures (harder to obfuscate)
-    "Lcom/client/module", "net/minecraft/client/gui", "render/ESP"
+    "AimAssist", "Automatically aims at players for you", "AnchorMacro", "AutoCrystal", 
+    "placeDelay", "breakDelay", "stopOnKill", "clickSimulation", "damageTick", 
+    "particleChance", "antiWeakness", "Automatically crystals fast for you", "fakePunch", 
+    "Switch Delay", "Switch Chance", "Sword Swap", "Work With Crystal", "Work With Totem", 
+    "Auto Hit Crystal", "Automatically hit-crystals for you", "Auto Inventory Totem", 
+    "autoOpen", "forceTotem", "totemSlot", "AutoJumpReset", "AutoPot", "throwDelay", 
+    "goToPrevSlot", "AutoWTap", "HoverTotem", "autoSwitch", "TriggerBot", "onlyCritSword", 
+    "AutoClicker", "AutoXP", "FakeLag", "Freecam", "PingSpoof", "anchorOnAnchor", 
+    "doubleGlowstone", "glowstoneMisplace", "DoubleAnchor", "NoBreakDelay", "NoJumpDelay", 
+    "PLACE_DELAY", "BREAK_DELAY", "PLACE_CHANCE", "BREAK_CHANCE", "STOP_ON_KILL", 
+    "DAMAGE_TICK", "switchToSword", "damageTickCheck", "isDeadBodyNearby", "SWITCH_CHANCE", 
+    "EXPLODE_DELAY_MS", "EXPLODE_SLOT", "isRightClickHeld", "PacketLag", "wasOnGround", 
+    "isAttackButtonPressed", "findKnockbackSword", "Failed to create temp file",
+    "onlyOnGround", "originalSlot", "isSwapped", "switchBack", "setSlot", "breachSlot", 
+    "executeMacroStep", "getSelectedSlot", "swingHand", "activateKeyPressed", 
+    "findItemInHotbar", "MouseSimulation", "mouseClick", "waitingToAttack", "pendingTarget",
+    "Stop On Kill", "Particle Chance", "Randomization", "placeClock", "breakClock",
+    # Latest Additions
+    "Fake Punch", "FakePunch", "Damage Tick", "DamageTick", "Shield Disabler", "ShieldDisabler"
 )
 
-if (Test-Path $dumpFile) {
-    # Extract readable text from the binary heap dump
-    Get-Content $dumpFile -Raw | Select-String -AllMatches -Pattern "[a-zA-Z0-9_/]{4,}" | 
-        ForEach-Object { $_.Matches.Value } > $stringsFile
+if (Test-Path $tempFile) {
+    $lines = Get-Content $tempFile
+    $caughtStrings = @()
 
-    $found = @()
-    $lines = Get-Content $stringsFile
+    Write-Host "[*] Scanning memory for cheat signatures..." -ForegroundColor Cyan
+
     foreach ($str in $cheatStrings) {
-        if ($lines -match [regex]::Escape($str)) { $found += $str }
+        if ($lines -match [regex]::Escape($str)) {
+            $caughtStrings += $str
+        }
     }
 
-    if ($found.Count -gt 0) {
-        Write-Host "`n[!] DEEP SCAN DETECTED:`n" -ForegroundColor Red
-        $found | Sort-Object | Get-Unique | ForEach-Object { Write-Host " -> $_" -ForegroundColor Red }
+    if ($caughtStrings.Count -gt 0) {
+        Write-Host "`n[!] DETECTED CHEAT STRINGS IN MEMORY:`n" -ForegroundColor Red
+        $caughtStrings | Sort-Object | Get-Unique | ForEach-Object { Write-Host " -> $_" -ForegroundColor Red }
     } else {
-        Write-Host "[+] Deep Scan clean." -ForegroundColor Green
+        Write-Host "[+] No suspicious strings found in javaw memory." -ForegroundColor Green
     }
 
-    # Cleanup large dump file
-    Remove-Item $dumpFile, $stringsFile -ErrorAction SilentlyContinue
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
 }
 
 Write-Host "`nDone." -ForegroundColor Cyan
