@@ -1,94 +1,145 @@
-# FilelessScriptDetector.ps1
-# Dumps event logs for command-line and PowerShell history.
-# Flags suspicious commands and saves all results to FilelessDetection.txt.
+Write-Host @"
+=============================================
+                  Nioki 
+=============================================
+"@
 
-$OutFile = ".\FilelessDetection.txt"
+$eventIDs = 600, 4104, 403, 800, 4103, 4100
+$base64Pattern = '[A-Za-z0-9+/]{100,}={0,2}'
+$invokePattern = '\bInvoke-\w+\b'
 
-# Define suspicious patterns (case-insensitive)
-$flagPatterns = @(
-    'iwr',                            # Short for Invoke-WebRequest
-    'invoke-web',                     # Invoke-WebRequest and similar
-    'type ',                          # 'type' as a fileless technique
-    'echo ',                          # 'echo' as a bypass technique
-    'mklink /h',                      # Hardlink creation
-    'powershell',                     # Direct PowerShell invocation
-    'curl',                           # curl for remote download
-    'certutil',                       # certutil for file transfer
-    'Invoke-Expression',
-    'Invoke-Command',
-    'New-Object Net\.WebClient',      # WebClient creation
-    'DownloadData',                   # DownloadData usage
-    'Dispose\(\)',                    # Cleanup of the WebClient object
-    'github\.com\/EuphorianXD\/Prestige-injector',  # Specific URL pattern
-    'GetTempFileName',                # Creating temp files
-    # Obfuscation patterns
-    'FromBase64String',               # Base64 encoded payloads
-    '-EncodedCommand',                # PowerShell encoded command
-    '\[char\]\d+',                    # [char] casting
-    '\$\w+\s*\+\s*\$\w+',             # Variable concatenation like $a+$b
-    '\$\w+\s*&\s*\$\w+',              # Variable & concatenation
-    '([A-Fa-f0-9]{2,}\\x)+',          # Hex escapes
-    '`{2,}',                          # Excessive backticks
-    '\^{2,}',                         # Excessive carets
-    '\$\w+\s*=\s*\$\w+',              # Variable assignment from another variable
-    '([Uu][0-9A-Fa-f]{4,})',          # Unicode escapes
-    '[System\.Text\.Encoding]',       # Encoding usage
-    '[System\.Convert]',              # Conversion usage
-    '\$\w+\s*=\s*"[^"]*"\s*\+\s*"[^"]*"' # String concatenation
-)
+while ($true) {
+    $useCurrent = Read-Host "Save CSV to current folder? (Y/N)"
+    if ($useCurrent -match '^[YyNn]$') { break }
+}
 
-# Get command-line events (EID 4688: process creation, EID 4104: PowerShell script block logging)
-$cmdEvents = Get-WinEvent -FilterHashtable @{ 
-    LogName='Security'
-    Id=4688
-} -ErrorAction SilentlyContinue
+if ($useCurrent -match '^[Yy]$') {
+    $outFolder = Get-Location
+} else {
+    do {
+        $outFolder = Read-Host "Enter full folder path"
+        if (-not (Test-Path $outFolder)) {
+            Write-Host "Folder not found, try again." -ForegroundColor Red
+            $outFolder = $null
+        }
+    } while (-not $outFolder)
+}
 
-$psEvents = Get-WinEvent -FilterHashtable @{ 
-    LogName='Microsoft-Windows-PowerShell/Operational'
-    Id=4104
-} -ErrorAction SilentlyContinue
+while ($true) {
+    $combine = Read-Host "Put all results in one CSV? (Y/N)"
+    if ($combine -match '^[YyNn]$') { break }
+}
 
-$results = @()
+while ($true) {
+    $optimize = Read-Host "Optimize messages in CSV? (Y/N)"
+    if ($optimize -match '^[YyNn]$') { break }
+}
 
-# Parse command-line events
-foreach ($event in $cmdEvents) {
-    $cmdLine = $event.Properties[8].Value
-    if ($null -ne $cmdLine -and $cmdLine -ne "") {
-        $flagged = $false
-        foreach ($pattern in $flagPatterns) {
-            if ($cmdLine -match "(?i)$pattern") {
-                $flagged = $true
-                break
+while ($true) {
+    $filterToday = Read-Host "Only events from today? (Y/N)"
+    if ($filterToday -match '^[YyNn]$') { break }
+}
+
+if ($filterToday -match '^[Yy]$') {
+    $startTime = [datetime]::Today
+    $endTime = $startTime.AddDays(1).AddSeconds(-1)
+} else {
+    $startTime = $null
+    $endTime = $null
+}
+
+$all = @()
+$invokeOnly = @()
+$byEvent = @{}
+
+Write-Host "`nGetting events..." -ForegroundColor Cyan
+
+foreach ($id in $eventIDs) {
+    $logName = if ($id -eq 600) { "Windows PowerShell" } else { "Microsoft-Windows-PowerShell/Operational" }
+    try {
+        $evts = Get-WinEvent -FilterHashtable @{LogName=$logName; Id=$id} -ErrorAction Stop
+    } catch {
+        Write-Host "Can't get events for ID $id in $logName" -ForegroundColor Red
+        continue
+    }
+
+    foreach ($evt in $evts) {
+        if ($startTime) {
+            if ($evt.TimeCreated -lt $startTime -or $evt.TimeCreated -gt $endTime) { continue }
+        }
+
+        $msg = $evt.Message
+        if (-not $msg -or $msg -match '^Provider ".*" is Started') { continue }
+
+        $outMsg = $null
+
+        if ($msg -match 'HostApplication=(.+?)(\s\w+=|\s*$)') {
+            $outMsg = $matches[1].Trim()
+        } elseif ($msg -match 'CommandLine=(.+?)(\s\w+=|\s*$)') {
+            $outMsg = $matches[1].Trim()
+        } elseif ($msg -match 'Error Message =') {
+            if ($msg -match 'Host Application = (.+?)(\r?\n\S+\s*=|\r?\n$)') {
+                $outMsg = $matches[1].Trim()
+            } else {
+                $outMsg = ($msg -split "`r?`n")[0].Trim()
+            }
+        } else {
+            $outMsg = $msg.Trim()
+        }
+
+        if ($optimize -match '^[Yy]$' -and $outMsg) {
+            if ($outMsg -match '^(.+?)(;|`n|`r|$)') {
+                $outMsg = $matches[1].Trim()
             }
         }
-        if ($flagged) {
-            $results += "[FLAGGED] $cmdLine"
-        } else {
-            $results += "$cmdLine"
+
+        if ([string]::IsNullOrWhiteSpace($outMsg)) { continue }
+
+        $base64 = if ($outMsg -match $base64Pattern) { "Yes" } else { "No" }
+
+        $obj = [PSCustomObject]@{
+            TimeCreated = $evt.TimeCreated
+            Message     = $outMsg
+            EventID     = $id
+            Base64      = $base64
         }
+
+        $all += $obj
+
+        if ($outMsg -match $invokePattern) {
+            $invokeOnly += $obj
+        }
+
+        if (-not $byEvent.ContainsKey($id)) {
+            $byEvent[$id] = @()
+        }
+        $byEvent[$id] += $obj
     }
 }
 
-# Parse PowerShell events
-foreach ($event in $psEvents) {
-    $psCmd = $event.Properties[2].Value
-    if ($null -ne $psCmd -and $psCmd -ne "") {
-        $flagged = $false
-        foreach ($pattern in $flagPatterns) {
-            if ($psCmd -match "(?i)$pattern") {
-                $flagged = $true
-                break
-            }
-        }
-        if ($flagged) {
-            $results += "[FLAGGED] $psCmd"
-        } else {
-            $results += "$psCmd"
-        }
+if ($all.Count -eq 0) {
+    Write-Host "No events found." -ForegroundColor Yellow
+    exit
+}
+
+$date = (Get-Date).ToString("yyyy-MM-dd")
+
+if ($combine -match '^[Yy]$') {
+    $file = Join-Path $outFolder "PowerShell_Combined_$date.csv"
+    $all | Sort-Object TimeCreated | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
+    Write-Host "`nSaved all results to $file" -ForegroundColor Green
+} else {
+    foreach ($k in $byEvent.Keys) {
+        $file = Join-Path $outFolder "$k`_$date.csv"
+        $byEvent[$k] | Sort-Object TimeCreated | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "Saved $file" -ForegroundColor Green
+    }
+
+    if ($invokeOnly.Count) {
+        $file = Join-Path $outFolder "InvokeOnly_$date.csv"
+        $invokeOnly | Sort-Object TimeCreated | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "Saved $file" -ForegroundColor Green
     }
 }
 
-# Save to file
-$results | Set-Content -Path $OutFile
-
-Write-Host "Detection complete. Results saved in $OutFile."
+Write-Host "`nDone." -ForegroundColor Cyan
