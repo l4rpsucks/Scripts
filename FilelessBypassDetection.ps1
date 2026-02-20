@@ -1,12 +1,14 @@
 Write-Host @"
 =============================================
-                  Nioki 
+                    Nioki
 =============================================
 "@
 
 $eventIDs = 600, 4104, 403, 800, 4103, 4100
 $base64Pattern = '[A-Za-z0-9+/]{100,}={0,2}'
-$invokePattern = '\bInvoke-\w+\b'
+
+# Detects Reflection, IEX, Web Requests, File Droppers, and Java Execution
+$alertPattern = 'Invoke-Expression|IEX|Invoke-RestMethod|IRM|\[System\.Reflection\.Assembly\]::Load\(|Net\.WebClient|DownloadData|WriteAllBytes|DownloadFile|java\s+-jar'
 
 while ($true) {
     $useCurrent = Read-Host "Save CSV to current folder? (Y/N)"
@@ -49,7 +51,7 @@ if ($filterToday -match '^[Yy]$') {
 }
 
 $all = @()
-$invokeOnly = @()
+$alertsOnly = @()
 $byEvent = @{}
 
 Write-Host "`nGetting events..." -ForegroundColor Cyan
@@ -72,7 +74,6 @@ foreach ($id in $eventIDs) {
         if (-not $msg -or $msg -match '^Provider ".*" is Started') { continue }
 
         $outMsg = $null
-
         if ($msg -match 'HostApplication=(.+?)(\s\w+=|\s*$)') {
             $outMsg = $matches[1].Trim()
         } elseif ($msg -match 'CommandLine=(.+?)(\s\w+=|\s*$)') {
@@ -106,8 +107,9 @@ foreach ($id in $eventIDs) {
 
         $all += $obj
 
-        if ($outMsg -match $invokePattern) {
-            $invokeOnly += $obj
+        # Check for High-Risk Commands including java -jar
+        if ($outMsg -match $alertPattern) {
+            $alertsOnly += $obj
         }
 
         if (-not $byEvent.ContainsKey($id)) {
@@ -135,10 +137,10 @@ if ($combine -match '^[Yy]$') {
         Write-Host "Saved $file" -ForegroundColor Green
     }
 
-    if ($invokeOnly.Count) {
-        $file = Join-Path $outFolder "InvokeOnly_$date.csv"
-        $invokeOnly | Sort-Object TimeCreated | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
-        Write-Host "Saved $file" -ForegroundColor Green
+    if ($alertsOnly.Count) {
+        $file = Join-Path $outFolder "AlertsOnly_$date.csv"
+        $alertsOnly | Sort-Object TimeCreated | Export-Csv -Path $file -NoTypeInformation -Encoding UTF8 -Force
+        Write-Host "Saved $file (Check for Java/Dropper/Web behavior)" -ForegroundColor Red
     }
 }
 
