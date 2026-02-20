@@ -12,7 +12,6 @@ if (-not $javaProc) {
     exit
 }
 
-# Renamed to $JavaPID to avoid the read-only error
 $JavaPID = $javaProc.Id[0]
 $tempFile = "$env:TEMP\javaw_strings.txt"
 $stringsPath = "$env:USERPROFILE\Downloads\strings.exe"
@@ -27,7 +26,6 @@ if (-not (Get-Command "strings.exe" -ErrorAction SilentlyContinue) -and -not (Te
     Expand-Archive -Path $zipPath -DestinationPath "$env:TEMP\StringsExtract" -Force
     Move-Item -Path "$env:TEMP\StringsExtract\strings.exe" -Destination $stringsPath -Force
     
-    # Cleanup zip
     Remove-Item $zipPath, "$env:TEMP\StringsExtract" -Recurse -ErrorAction SilentlyContinue
 }
 
@@ -36,7 +34,7 @@ if (Test-Path $stringsPath) { Set-Alias strings $stringsPath }
 Write-Host "[*] Found javaw.exe (PID: $JavaPID)" -ForegroundColor Cyan
 Write-Host "[*] Extracting strings from memory... Please wait." -ForegroundColor Yellow
 
-# 3. Extract strings using the corrected variable
+# 3. Extract strings
 try {
     strings -a -p $JavaPID > $tempFile
 } catch {
@@ -44,7 +42,7 @@ try {
     exit
 }
 
-# 4. Comprehensive Cheat String List (Including all new requests)
+# 4. Comprehensive Cheat String List
 $cheatStrings = @(
     "AimAssist", "Automatically aims at players for you", "AnchorMacro", "AutoCrystal", 
     "placeDelay", "breakDelay", "stopOnKill", "clickSimulation", "damageTick", 
@@ -59,10 +57,12 @@ $cheatStrings = @(
     "DAMAGE_TICK", "switchToSword", "damageTickCheck", "isDeadBodyNearby", "SWITCH_CHANCE", 
     "EXPLODE_DELAY_MS", "EXPLODE_SLOT", "isRightClickHeld", "PacketLag", "wasOnGround", 
     "isAttackButtonPressed", "findKnockbackSword", "Failed to create temp file",
-    # New String Detections
     "onlyOnGround", "originalSlot", "isSwapped", "switchBack", "setSlot", "breachSlot", 
     "executeMacroStep", "getSelectedSlot", "swingHand", "activateKeyPressed", 
-    "findItemInHotbar", "MouseSimulation", "mouseClick", "waitingToAttack", "pendingTarget"
+    "findItemInHotbar", "MouseSimulation", "mouseClick", "waitingToAttack", "pendingTarget",
+    "Stop On Kill", "Particle Chance", "Randomization", "placeClock", "breakClock",
+    # Latest Additions
+    "Fake Punch", "FakePunch", "Damage Tick", "DamageTick", "Shield Disabler", "ShieldDisabler"
 )
 
 if (Test-Path $tempFile) {
@@ -88,3 +88,5 @@ if (Test-Path $tempFile) {
 }
 
 Write-Host "`nDone." -ForegroundColor Cyan
+Write-Host "Press any key to exit..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
