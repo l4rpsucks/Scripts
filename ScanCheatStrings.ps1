@@ -12,7 +12,8 @@ if (-not $javaProc) {
     exit
 }
 
-$pid = $javaProc.Id[0]
+# CHANGED: Renamed $pid to $JavaPID to avoid read-only variable error
+$JavaPID = $javaProc.Id[0]
 $tempFile = "$env:TEMP\javaw_strings.txt"
 $stringsPath = "$env:USERPROFILE\Downloads\strings.exe"
 
@@ -35,13 +36,13 @@ if (Test-Path $stringsPath) {
     Set-Alias strings $stringsPath
 }
 
-Write-Host "[*] Found javaw.exe (PID: $pid)" -ForegroundColor Cyan
+Write-Host "[*] Found javaw.exe (PID: $JavaPID)" -ForegroundColor Cyan
 Write-Host "[*] Extracting strings from memory... Please wait." -ForegroundColor Yellow
 
 # 3. Extract strings from memory 
 try {
-    # -a (scan all), -p (numeric process ID)
-    strings -a -p $pid > $tempFile
+    # Using the renamed $JavaPID variable here
+    strings -a -p $JavaPID > $tempFile
 } catch {
     Write-Host "[-] Failed to extract strings. You might need to run as Administrator." -ForegroundColor Red
     exit
@@ -49,7 +50,6 @@ try {
 
 # 4. Comprehensive Cheat String List
 $cheatStrings = @(
-    # Original List
     "AimAssist", "Automatically aims at players for you", "AnchorMacro",
     "AutoCrystal", "placeDelay", "breakDelay", "stopOnKill",
     "clickSimulation", "damageTick", "particleChance", "antiWeakness",
@@ -66,8 +66,6 @@ $cheatStrings = @(
     "isDeadBodyNearby", "SWITCH_CHANCE", "EXPLODE_DELAY_MS", "EXPLODE_SLOT",
     "isRightClickHeld", "PacketLag", "wasOnGround", "isAttackButtonPressed",
     "findKnockbackSword", "Failed to create temp file",
-    
-    # New Targeted Strings
     "onlyOnGround", "originalSlot", "isSwapped", "switchBack", "setSlot",
     "breachSlot", "executeMacroStep", "getSelectedSlot", "swingHand",
     "activateKeyPressed", "findItemInHotbar", "MouseSimulation",
@@ -81,7 +79,6 @@ if (Test-Path $tempFile) {
     Write-Host "[*] Scanning memory for cheat signatures..." -ForegroundColor Cyan
 
     foreach ($str in $cheatStrings) {
-        # Using -match for regex speed; [regex]::Escape handles special characters
         if ($lines -match [regex]::Escape($str)) {
             $caughtStrings += $str
         }
